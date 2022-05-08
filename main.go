@@ -153,4 +153,24 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	v := make(plotter.Values, 0, 8)
+	for _, value := range w.X {
+		v = append(v, float64(value))
+	}
+
+	p = plot.New()
+	p.Title.Text = "Distribution"
+
+	h, err := plotter.NewHist(v, 16)
+	if err != nil {
+		panic(err)
+	}
+
+	p.Add(h)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "input_histogram.png")
+	if err != nil {
+		panic(err)
+	}
 }
