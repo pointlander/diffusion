@@ -37,33 +37,31 @@ func main() {
 		}
 	}
 
-	context := make([]tf32.Context, tf32.FractionBits)
+	context, quant :=
+		make([]tf32.Context, tf32.FractionBits),
+		make([]func(a tf32.Meta) tf32.Meta, tf32.FractionBits)
 	for i := range context {
 		context[i].Quantize = uint(i + 1)
-	}
-	quant := make([]func(a tf32.Meta) tf32.Meta, tf32.FractionBits)
-	for i := range context {
 		quant[i] = tf32.U(context[i].Quant)
 	}
 
+	width := 8
 	set := tf32.NewSet()
-	set.Add("aw", 4, 8)
-	set.Add("bw", 8, 8)
-	set.Add("cw", 8, 8)
-	set.Add("dw", 8, 4)
-	set.Add("ab", 8, 1)
-	set.Add("bb", 8, 1)
-	set.Add("cb", 8, 1)
-	set.Add("db", 4, 1)
+	set.Add("aw", 4, width)
+	set.Add("bw", width, width)
+	set.Add("cw", width, 4)
+	set.Add("ab", width, 1)
+	set.Add("bb", width, 1)
+	set.Add("cb", 4, 1)
 
-	for _, w := range set.Weights[:4] {
+	for _, w := range set.Weights[:3] {
 		factor := math.Sqrt(2.0 / float64(w.S[0]))
 		for i := 0; i < cap(w.X); i++ {
 			w.X = append(w.X, float32(rnd.NormFloat64()*factor))
 		}
 	}
 
-	for i := 4; i < len(set.Weights); i++ {
+	for i := 3; i < len(set.Weights); i++ {
 		set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
 	}
 
@@ -72,13 +70,12 @@ func main() {
 		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
-	l1 := tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
-	l2 := quant[0](tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))))
-	l3 := quant[0](tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("cw"), l2), set.Get("cb"))))
-	l4 := tf32.Add(tf32.Mul(set.Get("dw"), l3), set.Get("db"))
-	cost := tf32.Avg(tf32.Quadratic(l4, others.Get("data")))
+	l1 := tf32.Softmax(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
+	l2 := tf32.Softmax(quant[21](tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))))
+	l3 := tf32.Add(tf32.Mul(set.Get("cw"), l2), set.Get("cb"))
+	cost := tf32.Avg(tf32.Quadratic(l3, others.Get("data")))
 
-	alpha, eta, iterations := float32(.1), float32(.1), 1024
+	alpha, eta, iterations := float32(.1), float32(.1), 2048
 	points := make(plotter.XYs, 0, iterations)
 	i := 0
 	for i < iterations {
