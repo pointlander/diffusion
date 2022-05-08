@@ -15,7 +15,7 @@ import (
 	"gonum.org/v1/plot/vg/draw"
 
 	"github.com/pointlander/datum/iris"
-	"github.com/pointlander/gradient/tf64"
+	"github.com/pointlander/gradient/tf32"
 )
 
 func main() {
@@ -27,15 +27,17 @@ func main() {
 	}
 	fisher := datum.Fisher
 
-	others := tf64.NewSet()
+	others := tf32.NewSet()
 	others.Add("data", 4, len(fisher))
 
 	w := others.Weights[0]
 	for _, data := range fisher {
-		w.X = append(w.X, data.Measures...)
+		for _, measure := range data.Measures {
+			w.X = append(w.X, float32(measure))
+		}
 	}
 
-	set := tf64.NewSet()
+	set := tf32.NewSet()
 	set.Add("aw", 4, 8)
 	set.Add("bw", 8, 4)
 	set.Add("ab", 8, 1)
@@ -44,7 +46,7 @@ func main() {
 	for _, w := range set.Weights[:2] {
 		factor := math.Sqrt(2.0 / float64(w.S[0]))
 		for i := 0; i < cap(w.X); i++ {
-			w.X = append(w.X, rnd.NormFloat64()*factor)
+			w.X = append(w.X, float32(rnd.NormFloat64()*factor))
 		}
 	}
 
@@ -52,32 +54,32 @@ func main() {
 		set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
 	}
 
-	deltas := make([][]float64, 0, 8)
+	deltas := make([][]float32, 0, 8)
 	for _, p := range set.Weights {
-		deltas = append(deltas, make([]float64, len(p.X)))
+		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
-	l1 := tf64.Sigmoid(tf64.Add(tf64.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
-	l2 := tf64.Add(tf64.Mul(set.Get("bw"), l1), set.Get("bb"))
-	cost := tf64.Avg(tf64.Quadratic(l2, others.Get("data")))
+	l1 := tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
+	l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
+	cost := tf32.Avg(tf32.Quadratic(l2, others.Get("data")))
 
-	alpha, eta, iterations := .1, .1, 1024
+	alpha, eta, iterations := float32(.1), float32(.1), 1024
 	points := make(plotter.XYs, 0, iterations)
 	i := 0
 	for i < iterations {
-		total := 0.0
+		total := float32(0.0)
 		set.Zero()
 		others.Zero()
 
-		total += tf64.Gradient(cost).X[0]
-		sum := 0.0
+		total += tf32.Gradient(cost).X[0]
+		sum := float32(0.0)
 		for _, p := range set.Weights {
 			for _, d := range p.D {
 				sum += d * d
 			}
 		}
-		norm := math.Sqrt(sum)
-		scaling := 1.0
+		norm := float32(math.Sqrt(float64(sum)))
+		scaling := float32(1.0)
 		if norm > 1 {
 			scaling = 1 / norm
 		}
@@ -89,7 +91,7 @@ func main() {
 			}
 		}
 
-		points = append(points, plotter.XY{X: float64(i), Y: total})
+		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
 		fmt.Println(i, total)
 		if total < 1e-3 {
 			break
