@@ -72,6 +72,7 @@ func main() {
 
 	l1 := tf32.Softmax(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
 	l2 := tf32.Softmax(quant[21](tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))))
+	distribution := quant[21](tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb")))
 	l3 := tf32.Add(tf32.Mul(set.Get("cw"), l2), set.Get("cb"))
 	cost := tf32.Avg(tf32.Quadratic(l3, others.Get("data")))
 
@@ -110,6 +111,29 @@ func main() {
 		}
 		i++
 	}
+
+	distribution(func(a *tf32.V) bool {
+		v := make(plotter.Values, 0, 8)
+		for _, value := range a.X {
+			v = append(v, float64(value))
+		}
+
+		p := plot.New()
+		p.Title.Text = "Distribution"
+
+		h, err := plotter.NewHist(v, 16)
+		if err != nil {
+			panic(err)
+		}
+
+		p.Add(h)
+
+		err = p.Save(8*vg.Inch, 8*vg.Inch, "histogram.png")
+		if err != nil {
+			panic(err)
+		}
+		return true
+	})
 
 	p := plot.New()
 
