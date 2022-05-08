@@ -61,7 +61,7 @@ func main() {
 	l2 := tf64.Add(tf64.Mul(set.Get("bw"), l1), set.Get("bb"))
 	cost := tf64.Avg(tf64.Quadratic(l2, others.Get("data")))
 
-	alpha, eta, iterations := .3, .3, 1024
+	alpha, eta, iterations := .1, .1, 1024
 	points := make(plotter.XYs, 0, iterations)
 	i := 0
 	for i < iterations {
