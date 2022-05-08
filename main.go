@@ -37,20 +37,33 @@ func main() {
 		}
 	}
 
+	context := make([]tf32.Context, tf32.FractionBits)
+	for i := range context {
+		context[i].Quantize = uint(i + 1)
+	}
+	quant := make([]func(a tf32.Meta) tf32.Meta, tf32.FractionBits)
+	for i := range context {
+		quant[i] = tf32.U(context[i].Quant)
+	}
+
 	set := tf32.NewSet()
 	set.Add("aw", 4, 8)
-	set.Add("bw", 8, 4)
+	set.Add("bw", 8, 8)
+	set.Add("cw", 8, 8)
+	set.Add("dw", 8, 4)
 	set.Add("ab", 8, 1)
-	set.Add("bb", 4, 1)
+	set.Add("bb", 8, 1)
+	set.Add("cb", 8, 1)
+	set.Add("db", 4, 1)
 
-	for _, w := range set.Weights[:2] {
+	for _, w := range set.Weights[:4] {
 		factor := math.Sqrt(2.0 / float64(w.S[0]))
 		for i := 0; i < cap(w.X); i++ {
 			w.X = append(w.X, float32(rnd.NormFloat64()*factor))
 		}
 	}
 
-	for i := 2; i < len(set.Weights); i++ {
+	for i := 4; i < len(set.Weights); i++ {
 		set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
 	}
 
@@ -60,8 +73,10 @@ func main() {
 	}
 
 	l1 := tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
-	l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
-	cost := tf32.Avg(tf32.Quadratic(l2, others.Get("data")))
+	l2 := quant[0](tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))))
+	l3 := quant[0](tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("cw"), l2), set.Get("cb"))))
+	l4 := tf32.Add(tf32.Mul(set.Get("dw"), l3), set.Get("db"))
+	cost := tf32.Avg(tf32.Quadratic(l4, others.Get("data")))
 
 	alpha, eta, iterations := float32(.1), float32(.1), 1024
 	points := make(plotter.XYs, 0, iterations)
