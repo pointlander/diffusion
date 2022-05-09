@@ -70,9 +70,8 @@ func main() {
 		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
-	l1 := tf32.Quant(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
-	middle := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
-	l2 := quant[21](middle)
+	l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("data")), set.Get("ab")))
+	l2 := tf32.TanH(quant[20](tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))))
 	l3 := tf32.Add(tf32.Mul(set.Get("cw"), l2), set.Get("cb"))
 	cost := tf32.Avg(tf32.Quadratic(l3, others.Get("data")))
 
@@ -112,7 +111,7 @@ func main() {
 		i++
 	}
 
-	middle(func(a *tf32.V) bool {
+	l2(func(a *tf32.V) bool {
 		v := make(plotter.Values, 0, 8)
 		for _, value := range a.X {
 			v = append(v, float64(value))
