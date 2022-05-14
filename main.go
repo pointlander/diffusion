@@ -88,21 +88,11 @@ func Gaussian() {
 
 	alpha, eta, iterations := float32(.1), float32(.1), 2048
 	points := make(plotter.XYs, 0, iterations)
-	i, deviation := 0, 1.0
+	i, deviation := 0, 1e-3
 	for i < iterations {
 		total := float32(0.0)
 		set.Zero()
 		others.Zero()
-
-		if i == 1*128 {
-			deviation = 1e-1
-		} else if i == 2*128 {
-			deviation = 1e-2
-		} else if i == 3*128 {
-			deviation = 1e-3
-		} else if i == 4*128 {
-			deviation = 1e-4
-		}
 
 		index := 0
 		for _, data := range fisher {
@@ -147,7 +137,11 @@ func Gaussian() {
 	index := 0
 	for _, data := range fisher {
 		for _, measure := range data.Measures {
-			inputs.X[index] = float32(measure * deviation)
+			if deviation == 0 {
+				inputs.X[index] = float32(measure)
+			} else {
+				inputs.X[index] = float32(measure * deviation)
+			}
 			index++
 		}
 	}
@@ -162,7 +156,7 @@ func Gaussian() {
 		p := plot.New()
 		p.Title.Text = "Distribution"
 
-		h, err := plotter.NewHist(v, 16)
+		h, err := plotter.NewHist(v, 128)
 		if err != nil {
 			panic(err)
 		}
