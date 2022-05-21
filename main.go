@@ -192,6 +192,12 @@ func Gaussian() {
 		for _, value := range a.X {
 			v = append(v, float64(value))
 		}
+		for i, entry := range fisher {
+			for j := 0; j < 4; j++ {
+				fmt.Printf("%f ", a.X[i*4+j])
+			}
+			fmt.Printf("%s\n", entry.Label)
+		}
 
 		p := plot.New()
 		p.Title.Text = "Distribution"
