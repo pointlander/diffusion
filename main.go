@@ -59,7 +59,7 @@ func Gaussian() {
 	}
 	inputs := others.Weights[0]
 
-	width := 8
+	width := 4
 	set := tf32.NewSet()
 	set.Add("aw", 4, width)
 	set.Add("bw", width, 4)
@@ -82,13 +82,13 @@ func Gaussian() {
 		deltas = append(deltas, make([]float32, len(p.X)))
 	}
 
-	l1 := tf32.Sigmoid(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("input")), set.Get("ab")))
+	l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("input")), set.Get("ab")))
 	l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
 	cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
 
 	alpha, eta, iterations := float32(.1), float32(.1), 2048
 	points := make(plotter.XYs, 0, iterations)
-	i, deviation := 0, 10.0
+	i, deviation := 0, 5.0
 	for i < iterations {
 		total := float32(0.0)
 		set.Zero()
@@ -175,6 +175,8 @@ func Gaussian() {
 		}
 		return true
 	})
+
+	fmt.Println(set.Weights[0].X)
 
 	p := plot.New()
 
