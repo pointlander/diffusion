@@ -26,6 +26,36 @@ var (
 	FlagQuantize = flag.Bool("quantize", false, "quantization mode")
 )
 
+// Statistics captures statistics
+type Statistics struct {
+	Sum        float64
+	SumSquared float64
+	Count      int
+}
+
+// Add adds a statistic
+func (s *Statistics) Add(value float64) {
+	s.Sum += value
+	s.SumSquared += value * value
+	s.Count++
+}
+
+// StandardDeviation calculates the standard deviation
+func (s Statistics) StandardDeviation() float64 {
+	sum, count := s.Sum, float64(s.Count)
+	return math.Sqrt((s.SumSquared - sum*sum/count) / count)
+}
+
+// Average calculates the average
+func (s Statistics) Average() float64 {
+	return s.Sum / float64(s.Count)
+}
+
+// String returns the statistics as a string`
+func (s Statistics) String() string {
+	return fmt.Sprintf("%f +- %f", s.Average(), s.StandardDeviation())
+}
+
 func main() {
 	flag.Parse()
 
@@ -50,9 +80,12 @@ func Gaussian() {
 	others.Add("input", 4, len(fisher))
 	others.Add("output", 4, len(fisher))
 
+	var stats [4]Statistics
+
 	for _, w := range others.Weights {
 		for _, data := range fisher {
-			for _, measure := range data.Measures {
+			for i, measure := range data.Measures {
+				stats[i].Add(measure)
 				w.X = append(w.X, float32(measure))
 			}
 		}
@@ -86,31 +119,32 @@ func Gaussian() {
 	l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
 	cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
 
+	d := make([]float64, len(stats))
+	for i, stat := range stats {
+		d[i] = stat.StandardDeviation()
+	}
+
 	alpha, eta, iterations := float32(.1), float32(.1), 2048
 	points := make(plotter.XYs, 0, iterations)
-	i, deviation := 0, 5.0
+	i := 0
 	for i < iterations {
 		total := float32(0.0)
 		set.Zero()
 		others.Zero()
 
-		if i == 128 {
-			deviation = 1
-		} else if i == 2*128 {
-			deviation = 1e-1
-		} else if i == 3*128 {
-			deviation = 1e-2
-		} else if i == 4*128 {
-			deviation = 1e-3
+		if i == 128 || i == 2*128 || i == 3*128 || i == 4*128 {
+			for j := range d {
+				d[j] /= 10
+			}
 		}
 
 		index := 0
 		for _, data := range fisher {
-			for _, measure := range data.Measures {
-				if deviation == 0 {
+			for i, measure := range data.Measures {
+				if d[i] == 0 {
 					inputs.X[index] = float32(measure)
 				} else {
-					inputs.X[index] = float32(measure + rnd.NormFloat64()*deviation)
+					inputs.X[index] = float32(measure + rnd.NormFloat64()*d[i])
 				}
 				index++
 			}
@@ -177,6 +211,10 @@ func Gaussian() {
 	})
 
 	fmt.Println(set.Weights[0].X)
+
+	for _, stat := range stats {
+		fmt.Println(stat.StandardDeviation())
+	}
 
 	p := plot.New()
 
