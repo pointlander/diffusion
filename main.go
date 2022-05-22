@@ -92,154 +92,161 @@ func Gaussian() {
 	}
 	inputs := others.Weights[0]
 
-	width := 4
-	set := tf32.NewSet()
-	set.Add("aw", 4, width)
-	set.Add("bw", width, 4)
-	set.Add("ab", width, 1)
-	set.Add("bb", 4, 1)
+	train := func(name string, size, width int, input tf32.Meta) tf32.Meta {
+		fmt.Printf("\n")
+		fmt.Println(name)
+		set := tf32.NewSet()
+		set.Add("aw", size, width)
+		set.Add("bw", width, 4)
+		set.Add("ab", width, 1)
+		set.Add("bb", 4, 1)
 
-	for _, w := range set.Weights[:2] {
-		factor := math.Sqrt(2.0 / float64(w.S[0]))
-		for i := 0; i < cap(w.X); i++ {
-			w.X = append(w.X, float32(rnd.NormFloat64()*factor))
-		}
-	}
-
-	for i := 2; i < len(set.Weights); i++ {
-		set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
-	}
-
-	deltas := make([][]float32, 0, 8)
-	for _, p := range set.Weights {
-		deltas = append(deltas, make([]float32, len(p.X)))
-	}
-
-	l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), others.Get("input")), set.Get("ab")))
-	l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
-	cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
-
-	d := make([]float64, len(stats))
-	for i, stat := range stats {
-		d[i] = stat.StandardDeviation()
-	}
-
-	alpha, eta, iterations := float32(.1), float32(.1), 2048
-	points := make(plotter.XYs, 0, iterations)
-	i := 0
-	for i < iterations {
-		total := float32(0.0)
-		set.Zero()
-		others.Zero()
-
-		if i == 128 || i == 2*128 || i == 3*128 || i == 4*128 {
-			for j := range d {
-				d[j] /= 10
+		for _, w := range set.Weights[:2] {
+			factor := math.Sqrt(2.0 / float64(w.S[0]))
+			for i := 0; i < cap(w.X); i++ {
+				w.X = append(w.X, float32(rnd.NormFloat64()*factor))
 			}
+		}
+
+		for i := 2; i < len(set.Weights); i++ {
+			set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
+		}
+
+		deltas := make([][]float32, 0, 8)
+		for _, p := range set.Weights {
+			deltas = append(deltas, make([]float32, len(p.X)))
+		}
+
+		l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), input), set.Get("ab")))
+		l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
+		cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
+
+		d := make([]float64, len(stats))
+		for i, stat := range stats {
+			d[i] = stat.StandardDeviation()
+		}
+
+		alpha, eta, iterations := float32(.1), float32(.1), 2048
+		points := make(plotter.XYs, 0, iterations)
+		i := 0
+		for i < iterations {
+			total := float32(0.0)
+			set.Zero()
+			others.Zero()
+
+			if i == 128 || i == 2*128 || i == 3*128 || i == 4*128 {
+				for j := range d {
+					d[j] /= 10
+				}
+			}
+
+			index := 0
+			for _, data := range fisher {
+				for i, measure := range data.Measures {
+					if d[i] == 0 {
+						inputs.X[index] = float32(measure)
+					} else {
+						inputs.X[index] = float32(measure + rnd.NormFloat64()*d[i])
+					}
+					index++
+				}
+			}
+
+			total += tf32.Gradient(cost).X[0]
+			sum := float32(0.0)
+			for _, p := range set.Weights {
+				for _, d := range p.D {
+					sum += d * d
+				}
+			}
+			norm := float32(math.Sqrt(float64(sum)))
+			scaling := float32(1.0)
+			if norm > 1 {
+				scaling = 1 / norm
+			}
+
+			for j, w := range set.Weights {
+				for k, d := range w.D {
+					deltas[j][k] = alpha*deltas[j][k] - eta*d*scaling
+					set.Weights[j].X[k] += deltas[j][k]
+				}
+			}
+
+			points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
+			fmt.Println(i, total)
+			/*if total < .1 {
+				break
+			}*/
+			i++
 		}
 
 		index := 0
 		for _, data := range fisher {
-			for i, measure := range data.Measures {
-				if d[i] == 0 {
-					inputs.X[index] = float32(measure)
-				} else {
-					inputs.X[index] = float32(measure + rnd.NormFloat64()*d[i])
-				}
+			for _, measure := range data.Measures {
+				inputs.X[index] = float32(measure)
 				index++
 			}
 		}
+		fmt.Println(tf32.Gradient(cost).X[0])
 
-		total += tf32.Gradient(cost).X[0]
-		sum := float32(0.0)
-		for _, p := range set.Weights {
-			for _, d := range p.D {
-				sum += d * d
+		l1(func(a *tf32.V) bool {
+			v := make(plotter.Values, 0, 8)
+			for _, value := range a.X {
+				v = append(v, float64(value))
 			}
-		}
-		norm := float32(math.Sqrt(float64(sum)))
-		scaling := float32(1.0)
-		if norm > 1 {
-			scaling = 1 / norm
-		}
-
-		for j, w := range set.Weights {
-			for k, d := range w.D {
-				deltas[j][k] = alpha*deltas[j][k] - eta*d*scaling
-				set.Weights[j].X[k] += deltas[j][k]
+			for i, entry := range fisher {
+				for j := 0; j < width; j++ {
+					fmt.Printf("%f ", a.X[i*width+j])
+				}
+				fmt.Printf("%s\n", entry.Label)
 			}
-		}
 
-		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
-		fmt.Println(i, total)
-		/*if total < .1 {
-			break
-		}*/
-		i++
-	}
+			p := plot.New()
+			p.Title.Text = "Distribution"
 
-	index := 0
-	for _, data := range fisher {
-		for _, measure := range data.Measures {
-			inputs.X[index] = float32(measure)
-			index++
-		}
-	}
-	fmt.Println(tf32.Gradient(cost).X[0])
-
-	l1(func(a *tf32.V) bool {
-		v := make(plotter.Values, 0, 8)
-		for _, value := range a.X {
-			v = append(v, float64(value))
-		}
-		for i, entry := range fisher {
-			for j := 0; j < 4; j++ {
-				fmt.Printf("%f ", a.X[i*4+j])
+			h, err := plotter.NewHist(v, 64)
+			if err != nil {
+				panic(err)
 			}
-			fmt.Printf("%s\n", entry.Label)
+
+			p.Add(h)
+
+			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("%s_gaussian_histogram.png", name))
+			if err != nil {
+				panic(err)
+			}
+			return true
+		})
+
+		fmt.Println(set.Weights[0].X)
+
+		for _, stat := range stats {
+			fmt.Println(stat.StandardDeviation())
 		}
 
 		p := plot.New()
-		p.Title.Text = "Distribution"
 
-		h, err := plotter.NewHist(v, 64)
+		p.Title.Text = "epochs vs cost"
+		p.X.Label.Text = "epochs"
+		p.Y.Label.Text = "cost"
+
+		scatter, err := plotter.NewScatter(points)
 		if err != nil {
 			panic(err)
 		}
+		scatter.GlyphStyle.Radius = vg.Length(1)
+		scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+		p.Add(scatter)
 
-		p.Add(h)
-
-		err = p.Save(8*vg.Inch, 8*vg.Inch, "gaussian_histogram.png")
+		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("%s_gaussian_cost.png", name))
 		if err != nil {
 			panic(err)
 		}
-		return true
-	})
-
-	fmt.Println(set.Weights[0].X)
-
-	for _, stat := range stats {
-		fmt.Println(stat.StandardDeviation())
+		return l1
 	}
 
-	p := plot.New()
-
-	p.Title.Text = "epochs vs cost"
-	p.X.Label.Text = "epochs"
-	p.Y.Label.Text = "cost"
-
-	scatter, err := plotter.NewScatter(points)
-	if err != nil {
-		panic(err)
-	}
-	scatter.GlyphStyle.Radius = vg.Length(1)
-	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
-	p.Add(scatter)
-
-	err = p.Save(8*vg.Inch, 8*vg.Inch, "gaussian_cost.png")
-	if err != nil {
-		panic(err)
-	}
+	l1 := train("layer1", 4, 16, others.Get("input"))
+	train("layer2", 16, 4, l1)
 }
 
 // Quantize is a quantization diffusion network
