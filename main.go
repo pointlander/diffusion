@@ -87,6 +87,9 @@ func Gaussian() {
 
 	for _, w := range others.Weights {
 		for _, data := range fisher {
+			if data.Label == "Iris-setosa" {
+				continue
+			}
 			for i, measure := range data.Measures {
 				stats[i].Add(measure)
 				w.X = append(w.X, float32(measure))
@@ -145,6 +148,9 @@ func Gaussian() {
 
 			index := 0
 			for _, data := range fisher {
+				if data.Label == "Iris-setosa" {
+					continue
+				}
 				for i, measure := range data.Measures {
 					if d[i] == 0 {
 						inputs.X[index] = float32(measure)
@@ -185,6 +191,9 @@ func Gaussian() {
 
 		index := 0
 		for _, data := range fisher {
+			if data.Label == "Iris-setosa" {
+				continue
+			}
 			for _, measure := range data.Measures {
 				inputs.X[index] = float32(measure)
 				index++
@@ -200,6 +209,9 @@ func Gaussian() {
 			data := make(map[string][]float64)
 			stats := make([]Statistics, width)
 			for i, entry := range fisher {
+				if entry.Label == "Iris-setosa" {
+					continue
+				}
 				for j := 0; j < width; j++ {
 					fmt.Printf("%f ", a.X[i*width+j])
 					stats[j].Add(float64(a.X[i*width+j]))
@@ -213,6 +225,9 @@ func Gaussian() {
 				}
 			}
 			for i, entry := range fisher {
+				if entry.Label == "Iris-setosa" {
+					continue
+				}
 				for _, j := range indexes {
 					s := data[entry.Label]
 					if s == nil {
