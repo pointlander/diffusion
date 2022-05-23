@@ -7,9 +7,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image/color"
 	"math"
 	"math/rand"
 
+	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/gonum/stat"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -194,11 +197,30 @@ func Gaussian() {
 			for _, value := range a.X {
 				v = append(v, float64(value))
 			}
+			data := make(map[string][]float64)
+			stats := make([]Statistics, width)
 			for i, entry := range fisher {
 				for j := 0; j < width; j++ {
 					fmt.Printf("%f ", a.X[i*width+j])
+					stats[j].Add(float64(a.X[i*width+j]))
 				}
 				fmt.Printf("%s\n", entry.Label)
+			}
+			indexes := make([]int, 0, 8)
+			for i := range stats {
+				if stats[i].StandardDeviation() > .1 {
+					indexes = append(indexes, i)
+				}
+			}
+			for i, entry := range fisher {
+				for _, j := range indexes {
+					s := data[entry.Label]
+					if s == nil {
+						s = make([]float64, 0, 8)
+					}
+					s = append(s, float64(a.X[i*width+j]))
+					data[entry.Label] = s
+				}
 			}
 
 			p := plot.New()
@@ -212,6 +234,58 @@ func Gaussian() {
 			p.Add(h)
 
 			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("%s_gaussian_histogram.png", name))
+			if err != nil {
+				panic(err)
+			}
+
+			p = plot.New()
+
+			p.Title.Text = "x vs y"
+			p.X.Label.Text = "x"
+			p.Y.Label.Text = "y"
+			for label, entry := range data {
+				r, c := len(entry)/len(indexes), len(indexes)
+				ranks := mat.NewDense(r, c, entry)
+				var pc stat.PC
+				ok := pc.PrincipalComponents(ranks, nil)
+				if !ok {
+					panic("PrincipalComponents failed")
+				}
+				k := 1
+				if c >= 2 {
+					k = 2
+				}
+				var proj mat.Dense
+				var vec mat.Dense
+				pc.VectorsTo(&vec)
+				slice := vec.Slice(0, c, 0, k)
+				proj.Mul(ranks, slice)
+
+				points := make(plotter.XYs, 0, 8)
+				for i := 0; i < r; i++ {
+					y := 0.0
+					if c >= 2 {
+						y = proj.At(i, 1)
+					}
+					points = append(points, plotter.XY{X: proj.At(i, 0), Y: y})
+				}
+
+				scatter, err := plotter.NewScatter(points)
+				if err != nil {
+					panic(err)
+				}
+				scatter.GlyphStyle.Radius = vg.Length(3)
+				scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+				if label == "Iris-virginica" {
+					scatter.Color = color.RGBA{0xFF, 0, 0, 0xFF}
+				} else if label == "Iris-versicolor" {
+					scatter.Color = color.RGBA{0, 0xFF, 0, 0xFF}
+				} else if label == "Iris-setosa" {
+					scatter.Color = color.RGBA{0, 0, 0xFF, 0xFF}
+				}
+				p.Add(scatter)
+			}
+			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("%s_projection.png", name))
 			if err != nil {
 				panic(err)
 			}

@@ -15,6 +15,7 @@ require (
 	github.com/ziutek/blas v0.0.0-20190227122918-da4ca23e90bb // indirect
 	golang.org/x/image v0.0.0-20220302094943-723b81ca9867 // indirect
 	golang.org/x/text v0.3.7 // indirect
+	gonum.org/v1/gonum v0.11.0 // indirect
 	gonum.org/v1/plot v0.11.0 // indirect
 	google.golang.org/protobuf v1.24.0 // indirect
 )
