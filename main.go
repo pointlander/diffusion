@@ -180,7 +180,7 @@ func Start() {
 			stats[i].Add(measure)
 		}
 	}
-	reduction := Process("", rnd, stats, 1, datum.Fisher)
+	reduction := Process("", rnd, stats, 3, 0, 0, datum.Fisher)
 	out, err := os.Create("results/result.md")
 	if err != nil {
 		panic(err)
@@ -189,10 +189,10 @@ func Start() {
 	reduction.PrintTable(out, ModeRaw, 0)
 }
 
-func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, data []iris.Iris) *Reduction {
+func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, label, count uint, data []iris.Iris) *Reduction {
 	name := fmt.Sprintf("%s%dnode", lr, depth)
 	embeddings := Segment(rnd, stats, name, 4, 4, data)
-	reduction := embeddings.VarianceReduction(1, 0, 0)
+	reduction := embeddings.VarianceReduction(1, label, count)
 	if depth <= 0 {
 		return reduction
 	}
@@ -200,12 +200,12 @@ func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, data []i
 	for _, embedding := range reduction.Left.Embeddings.Embeddings {
 		left = append(left, embedding.Iris)
 	}
-	reduction.Left = Process("l", rnd, stats, depth-1, left)
+	reduction.Left = Process("l", rnd, stats, depth-1, label, count+1, left)
 	var right []iris.Iris
 	for _, embedding := range reduction.Right.Embeddings.Embeddings {
 		right = append(right, embedding.Iris)
 	}
-	reduction.Right = Process("r", rnd, stats, depth-1, right)
+	reduction.Right = Process("r", rnd, stats, depth-1, label|(1<<count), count+1, right)
 	return reduction
 }
 
