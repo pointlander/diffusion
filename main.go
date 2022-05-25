@@ -191,7 +191,7 @@ func Start() {
 
 func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, label, count uint, data []iris.Iris) *Reduction {
 	name := fmt.Sprintf("%s%dnode", lr, depth)
-	embeddings := Segment(rnd, stats, name, 4, 4, data)
+	embeddings := Segment(rnd, stats, name, 4, 16, data)
 	reduction := embeddings.VarianceReduction(1, label, count)
 	if depth <= 0 {
 		return reduction
@@ -334,7 +334,7 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 	}
 
 	l1, cost := train(fmt.Sprintf("layer1_%s", name), 4, 16, others.Get("input"))
-	l1, cost = train(fmt.Sprintf("layer2_%s", name), 16, 4, l1)
+	//l1, cost = train(fmt.Sprintf("layer2_%s", name), 16, 4, l1)
 
 	index := 0
 	for _, data := range iris {
