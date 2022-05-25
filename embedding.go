@@ -124,11 +124,13 @@ func (e *Embeddings) VarianceReduction(depth int, label, count uint) *Reduction 
 		Network:    e.Network,
 		Embeddings: make([]Embedding, 0, length),
 	}
-	for _, row := range e.Embeddings {
+	for i, row := range e.Embeddings {
 		if row.Features[reduction.Column] > reduction.Pivot {
 			right.Embeddings = append(right.Embeddings, row)
+			right.Embeddings[len(right.Embeddings)-1].Source = i
 		} else {
 			left.Embeddings = append(left.Embeddings, row)
+			left.Embeddings[len(left.Embeddings)-1].Source = i
 		}
 	}
 	reduction.Left, reduction.Right =
