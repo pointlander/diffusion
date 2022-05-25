@@ -8,8 +8,10 @@ import (
 	"flag"
 	"fmt"
 	"image/color"
+	"io"
 	"math"
 	"math/rand"
+	"os"
 
 	"gonum.org/v1/gonum/mat"
 	"gonum.org/v1/gonum/stat"
@@ -28,6 +30,101 @@ var (
 	// FlagQuantize is quantization mode
 	FlagQuantize = flag.Bool("quantize", false, "quantization mode")
 )
+
+type Mode int
+
+const (
+	ModeNone Mode = iota
+	ModeRaw
+	ModeOrthogonality
+	ModeParallel
+	ModeMixed
+	ModeEntropy
+	ModeVariance
+	NumberOfModes
+)
+
+func (m Mode) String() string {
+	switch m {
+	case ModeNone:
+		return "none"
+	case ModeRaw:
+		return "raw"
+	case ModeOrthogonality:
+		return "orthogonality"
+	case ModeMixed:
+		return "mixed"
+	case ModeParallel:
+		return "parallel"
+	case ModeEntropy:
+		return "entropy"
+	case ModeVariance:
+		return "variance"
+	}
+	return "unknown"
+}
+
+func printTable(out io.Writer, headers []string, rows [][]string) {
+	sizes := make([]int, len(headers))
+	for i, header := range headers {
+		sizes[i] = len(header)
+	}
+	for _, row := range rows {
+		for j, item := range row {
+			if length := len(item); length > sizes[j] {
+				sizes[j] = length
+			}
+		}
+	}
+
+	last := len(headers) - 1
+	fmt.Fprintf(out, "| ")
+	for i, header := range headers {
+		fmt.Fprintf(out, "%s", header)
+		spaces := sizes[i] - len(header)
+		for spaces > 0 {
+			fmt.Fprintf(out, " ")
+			spaces--
+		}
+		fmt.Fprintf(out, " |")
+		if i < last {
+			fmt.Fprintf(out, " ")
+		}
+	}
+	fmt.Fprintf(out, "\n| ")
+	for i, header := range headers {
+		dashes := len(header)
+		if sizes[i] > dashes {
+			dashes = sizes[i]
+		}
+		for dashes > 0 {
+			fmt.Fprintf(out, "-")
+			dashes--
+		}
+		fmt.Fprintf(out, " |")
+		if i < last {
+			fmt.Fprintf(out, " ")
+		}
+	}
+	fmt.Fprintf(out, "\n")
+	for _, row := range rows {
+		fmt.Fprintf(out, "| ")
+		last := len(row) - 1
+		for i, entry := range row {
+			spaces := sizes[i] - len(entry)
+			fmt.Fprintf(out, "%s", entry)
+			for spaces > 0 {
+				fmt.Fprintf(out, " ")
+				spaces--
+			}
+			fmt.Fprintf(out, " |")
+			if i < last {
+				fmt.Fprintf(out, " ")
+			}
+		}
+		fmt.Fprintf(out, "\n")
+	}
+}
 
 // Statistics captures statistics
 type Statistics struct {
@@ -199,13 +296,33 @@ func Gaussian() {
 			}
 			data := make(map[string][]float64)
 			stats := make([]Statistics, width)
+			embeddings := Embeddings{
+				Columns:    width,
+				Network:    l1,
+				CostCurve:  fmt.Sprintf("results/%s_gaussian_cost.png", name),
+				Embeddings: make([]Embedding, 0, 8),
+			}
 			for i, entry := range fisher {
+				embedding := Embedding{
+					Iris:     entry,
+					Features: make([]float64, 0, width),
+				}
 				for j := 0; j < width; j++ {
 					fmt.Printf("%f ", a.X[i*width+j])
 					stats[j].Add(float64(a.X[i*width+j]))
+					embedding.Features = append(embedding.Features, float64(a.X[i*width+j]))
 				}
+				embeddings.Embeddings = append(embeddings.Embeddings, embedding)
 				fmt.Printf("%s\n", entry.Label)
 			}
+			reduction := embeddings.VarianceReduction(1, 0, 0)
+			out, err := os.Create(fmt.Sprintf("results/result_%s.md", name))
+			if err != nil {
+				panic(err)
+			}
+			defer out.Close()
+			reduction.PrintTable(out, ModeRaw, 0)
+
 			indexes := make([]int, 0, 8)
 			for i := range stats {
 				if stats[i].StandardDeviation() > .1 {
@@ -233,7 +350,7 @@ func Gaussian() {
 
 			p.Add(h)
 
-			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("%s_gaussian_histogram.png", name))
+			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("results/%s_gaussian_histogram.png", name))
 			if err != nil {
 				panic(err)
 			}
@@ -285,7 +402,7 @@ func Gaussian() {
 				}
 				p.Add(scatter)
 			}
-			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("%s_projection.png", name))
+			err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("results/%s_projection.png", name))
 			if err != nil {
 				panic(err)
 			}
@@ -312,7 +429,7 @@ func Gaussian() {
 		scatter.GlyphStyle.Shape = draw.CircleGlyph{}
 		p.Add(scatter)
 
-		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("%s_gaussian_cost.png", name))
+		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("results/%s_gaussian_cost.png", name))
 		if err != nil {
 			panic(err)
 		}
@@ -320,7 +437,8 @@ func Gaussian() {
 	}
 
 	l1 := train("layer1", 4, 16, others.Get("input"))
-	train("layer2", 16, 4, l1)
+	_ = l1
+	//train("layer2", 16, 4, l1)
 }
 
 // Quantize is a quantization diffusion network
