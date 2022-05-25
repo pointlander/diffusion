@@ -180,7 +180,7 @@ func Start() {
 			stats[i].Add(measure)
 		}
 	}
-	reduction := Process("", rnd, stats, 1, datum.Fisher)
+	reduction := Process("", rnd, stats, 3, 0, 0, datum.Fisher)
 	out, err := os.Create("results/result.md")
 	if err != nil {
 		panic(err)
@@ -189,10 +189,10 @@ func Start() {
 	reduction.PrintTable(out, ModeRaw, 0)
 }
 
-func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, data []iris.Iris) *Reduction {
+func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, label, count uint, data []iris.Iris) *Reduction {
 	name := fmt.Sprintf("%s%dnode", lr, depth)
 	embeddings := Segment(rnd, stats, name, 4, 16, data)
-	reduction := embeddings.VarianceReduction(1, 0, 0)
+	reduction := embeddings.VarianceReduction(1, label, count)
 	if depth <= 0 {
 		return reduction
 	}
@@ -200,12 +200,12 @@ func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, data []i
 	for _, embedding := range reduction.Left.Embeddings.Embeddings {
 		left = append(left, embedding.Iris)
 	}
-	reduction.Left = Process("l", rnd, stats, depth-1, left)
+	reduction.Left = Process("l", rnd, stats, depth-1, label, count+1, left)
 	var right []iris.Iris
 	for _, embedding := range reduction.Right.Embeddings.Embeddings {
 		right = append(right, embedding.Iris)
 	}
-	reduction.Right = Process("r", rnd, stats, depth-1, right)
+	reduction.Right = Process("r", rnd, stats, depth-1, label|(1<<count), count+1, right)
 	return reduction
 }
 
@@ -223,93 +223,118 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 	}
 	inputs := others.Weights[0]
 
-	input := others.Get("input")
-	fmt.Printf("\n")
-	fmt.Println(name)
-	set := tf32.NewSet()
-	set.Add("aw", size, width)
-	set.Add("bw", width, 4)
-	set.Add("ab", width, 1)
-	set.Add("bb", 4, 1)
+	train := func(name string, size, width int, input tf32.Meta) (tf32.Meta, tf32.Meta) {
+		fmt.Printf("\n")
+		fmt.Println(name)
+		set := tf32.NewSet()
+		set.Add("aw", size, width)
+		set.Add("bw", width, 4)
+		set.Add("ab", width, 1)
+		set.Add("bb", 4, 1)
 
-	for _, w := range set.Weights[:2] {
-		factor := math.Sqrt(2.0 / float64(w.S[0]))
-		for i := 0; i < cap(w.X); i++ {
-			w.X = append(w.X, float32(rnd.NormFloat64()*factor))
-		}
-	}
-
-	for i := 2; i < len(set.Weights); i++ {
-		set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
-	}
-
-	deltas := make([][]float32, 0, 8)
-	for _, p := range set.Weights {
-		deltas = append(deltas, make([]float32, len(p.X)))
-	}
-
-	l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), input), set.Get("ab")))
-	l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
-	cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
-
-	d := make([]float64, len(stats))
-	for i, stat := range stats {
-		d[i] = stat.StandardDeviation()
-	}
-
-	alpha, eta, iterations := float32(.1), float32(.1), 2048
-	points := make(plotter.XYs, 0, iterations)
-	i := 0
-	for i < iterations {
-		total := float32(0.0)
-		set.Zero()
-		others.Zero()
-
-		if i == 128 || i == 2*128 || i == 3*128 || i == 4*128 {
-			for j := range d {
-				d[j] /= 10
+		for _, w := range set.Weights[:2] {
+			factor := math.Sqrt(2.0 / float64(w.S[0]))
+			for i := 0; i < cap(w.X); i++ {
+				w.X = append(w.X, float32(rnd.NormFloat64()*factor))
 			}
 		}
 
-		index := 0
-		for _, data := range iris {
-			for i, measure := range data.Measures {
-				if d[i] == 0 {
-					inputs.X[index] = float32(measure)
-				} else {
-					inputs.X[index] = float32(measure + rnd.NormFloat64()*d[i])
-				}
-				index++
-			}
+		for i := 2; i < len(set.Weights); i++ {
+			set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
 		}
 
-		total += tf32.Gradient(cost).X[0]
-		sum := float32(0.0)
+		deltas := make([][]float32, 0, 8)
 		for _, p := range set.Weights {
-			for _, d := range p.D {
-				sum += d * d
-			}
-		}
-		norm := float32(math.Sqrt(float64(sum)))
-		scaling := float32(1.0)
-		if norm > 1 {
-			scaling = 1 / norm
+			deltas = append(deltas, make([]float32, len(p.X)))
 		}
 
-		for j, w := range set.Weights {
-			for k, d := range w.D {
-				deltas[j][k] = alpha*deltas[j][k] - eta*d*scaling
-				set.Weights[j].X[k] += deltas[j][k]
-			}
+		l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), input), set.Get("ab")))
+		l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
+		cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
+
+		d := make([]float64, len(stats))
+		for i, stat := range stats {
+			d[i] = stat.StandardDeviation()
 		}
 
-		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
-		fmt.Println(i, total)
-		/*if total < .1 {
-			break
-		}*/
-		i++
+		alpha, eta, iterations := float32(.1), float32(.1), 2048
+		points := make(plotter.XYs, 0, iterations)
+		i := 0
+		for i < iterations {
+			total := float32(0.0)
+			set.Zero()
+			others.Zero()
+
+			if i == 128 || i == 2*128 || i == 3*128 || i == 4*128 {
+				for j := range d {
+					d[j] /= 10
+				}
+			}
+
+			index := 0
+			for _, data := range iris {
+				for i, measure := range data.Measures {
+					if d[i] == 0 {
+						inputs.X[index] = float32(measure)
+					} else {
+						inputs.X[index] = float32(measure + rnd.NormFloat64()*d[i])
+					}
+					index++
+				}
+			}
+
+			total += tf32.Gradient(cost).X[0]
+			sum := float32(0.0)
+			for _, p := range set.Weights {
+				for _, d := range p.D {
+					sum += d * d
+				}
+			}
+			norm := float32(math.Sqrt(float64(sum)))
+			scaling := float32(1.0)
+			if norm > 1 {
+				scaling = 1 / norm
+			}
+
+			for j, w := range set.Weights {
+				for k, d := range w.D {
+					deltas[j][k] = alpha*deltas[j][k] - eta*d*scaling
+					set.Weights[j].X[k] += deltas[j][k]
+				}
+			}
+
+			points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
+			//fmt.Println(i, total)
+			/*if total < .1 {
+				break
+			}*/
+			i++
+		}
+
+		p := plot.New()
+
+		p.Title.Text = "epochs vs cost"
+		p.X.Label.Text = "epochs"
+		p.Y.Label.Text = "cost"
+
+		scatter, err := plotter.NewScatter(points)
+		if err != nil {
+			panic(err)
+		}
+		scatter.GlyphStyle.Radius = vg.Length(1)
+		scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+		p.Add(scatter)
+
+		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("results/%s_gaussian_cost.png", name))
+		if err != nil {
+			panic(err)
+		}
+
+		return l1, cost
 	}
+
+	l1, cost := train(fmt.Sprintf("layer1_%s", name), 4, 16, others.Get("input"))
+	//l1, cost = train(fmt.Sprintf("layer2_%s", name), 16, 4, l1)
 
 	index := 0
 	for _, data := range iris {
@@ -318,7 +343,7 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 			index++
 		}
 	}
-	fmt.Println(tf32.Gradient(cost).X[0])
+	fmt.Println("cost", tf32.Gradient(cost).X[0])
 
 	embeddings := Embeddings{
 		Columns:    width,
@@ -434,29 +459,8 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 		return true
 	})
 
-	fmt.Println(set.Weights[0].X)
-
 	for _, stat := range stats {
 		fmt.Println(stat.StandardDeviation())
-	}
-
-	p := plot.New()
-
-	p.Title.Text = "epochs vs cost"
-	p.X.Label.Text = "epochs"
-	p.Y.Label.Text = "cost"
-
-	scatter, err := plotter.NewScatter(points)
-	if err != nil {
-		panic(err)
-	}
-	scatter.GlyphStyle.Radius = vg.Length(1)
-	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
-	p.Add(scatter)
-
-	err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("results/%s_gaussian_cost.png", name))
-	if err != nil {
-		panic(err)
 	}
 
 	return &embeddings
