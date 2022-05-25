@@ -174,7 +174,13 @@ func Start() {
 	if err != nil {
 		panic(err)
 	}
-	reduction := Process("", rnd, 1, datum.Fisher)
+	var stats [4]Statistics
+	for _, data := range datum.Fisher {
+		for i, measure := range data.Measures {
+			stats[i].Add(measure)
+		}
+	}
+	reduction := Process("", rnd, stats, 1, datum.Fisher)
 	out, err := os.Create("results/result.md")
 	if err != nil {
 		panic(err)
@@ -183,37 +189,34 @@ func Start() {
 	reduction.PrintTable(out, ModeRaw, 0)
 }
 
-func Process(lr string, rnd *rand.Rand, depth int, data []iris.Iris) *Reduction {
+func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, data []iris.Iris) *Reduction {
 	name := fmt.Sprintf("%s%dnode", lr, depth)
-	embeddings := Segment(rnd, name, 4, 4, data)
+	embeddings := Segment(rnd, stats, name, 4, 16, data)
 	reduction := embeddings.VarianceReduction(1, 0, 0)
 	if depth <= 0 {
 		return reduction
 	}
 	var left []iris.Iris
 	for _, embedding := range reduction.Left.Embeddings.Embeddings {
-		left = append(left, data[embedding.Source])
+		left = append(left, embedding.Iris)
 	}
-	reduction.Left = Process("l", rnd, depth-1, left)
+	reduction.Left = Process("l", rnd, stats, depth-1, left)
 	var right []iris.Iris
 	for _, embedding := range reduction.Right.Embeddings.Embeddings {
-		right = append(right, data[embedding.Source])
+		right = append(right, embedding.Iris)
 	}
-	reduction.Right = Process("r", rnd, depth-1, right)
+	reduction.Right = Process("r", rnd, stats, depth-1, right)
 	return reduction
 }
 
-func Segment(rnd *rand.Rand, name string, size, width int, iris []iris.Iris) *Embeddings {
+func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, iris []iris.Iris) *Embeddings {
 	others := tf32.NewSet()
 	others.Add("input", 4, len(iris))
 	others.Add("output", 4, len(iris))
 
-	var stats [4]Statistics
-
 	for _, w := range others.Weights {
 		for _, data := range iris {
-			for i, measure := range data.Measures {
-				stats[i].Add(measure)
+			for _, measure := range data.Measures {
 				w.X = append(w.X, float32(measure))
 			}
 		}
@@ -377,7 +380,7 @@ func Segment(rnd *rand.Rand, name string, size, width int, iris []iris.Iris) *Em
 			panic(err)
 		}
 
-		p = plot.New()
+		/*p = plot.New()
 
 		p.Title.Text = "x vs y"
 		p.X.Label.Text = "x"
@@ -427,7 +430,7 @@ func Segment(rnd *rand.Rand, name string, size, width int, iris []iris.Iris) *Em
 		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("results/%s_projection.png", name))
 		if err != nil {
 			panic(err)
-		}
+		}*/
 		return true
 	})
 
