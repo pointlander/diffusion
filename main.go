@@ -80,41 +80,63 @@ func Gaussian() {
 	fisher := datum.Fisher
 
 	others := tf32.NewSet()
-	others.Add("input", 4, len(fisher))
-	others.Add("output", 4, len(fisher))
+	others.Add("input", 4, 200)
+	others.Add("output", 4, 200)
 
 	var stats [4]Statistics
 
-	for _, w := range others.Weights {
-		for _, data := range fisher {
-			if data.Label == "Iris-setosa" {
-				continue
-			}
-			for i, measure := range data.Measures {
-				stats[i].Add(measure)
-				w.X = append(w.X, float32(measure))
-			}
+	inputs := others.Weights[0]
+	outputs := others.Weights[1]
+
+	for _, data := range fisher {
+		if data.Label == "Iris-setosa" {
+			continue
+		}
+		for i, measure := range data.Measures {
+			stats[i].Add(measure)
+			inputs.X = append(inputs.X, float32(measure))
 		}
 	}
-	inputs := others.Weights[0]
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 4; j++ {
+			inputs.X = append(inputs.X, float32(0.0))
+		}
+	}
+
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 4; j++ {
+			outputs.X = append(outputs.X, float32(0.0))
+		}
+	}
+	for _, data := range fisher {
+		if data.Label == "Iris-setosa" {
+			continue
+		}
+		for i, measure := range data.Measures {
+			stats[i].Add(measure)
+			outputs.X = append(outputs.X, float32(measure))
+		}
+	}
 
 	train := func(name string, size, width int, input tf32.Meta) tf32.Meta {
 		fmt.Printf("\n")
 		fmt.Println(name)
 		set := tf32.NewSet()
 		set.Add("aw", size, width)
-		set.Add("bw", width, 4)
+		set.Add("bw", width, width)
+		set.Add("cw", width, 4)
 		set.Add("ab", width, 1)
-		set.Add("bb", 4, 1)
+		set.Add("bb", width, 1)
+		set.Add("cb", 4, 1)
 
-		for _, w := range set.Weights[:2] {
+		for _, w := range set.Weights[:3] {
 			factor := math.Sqrt(2.0 / float64(w.S[0]))
 			for i := 0; i < cap(w.X); i++ {
 				w.X = append(w.X, float32(rnd.NormFloat64()*factor))
 			}
 		}
 
-		for i := 2; i < len(set.Weights); i++ {
+		for i := 3; i < len(set.Weights); i++ {
 			set.Weights[i].X = set.Weights[i].X[:cap(set.Weights[i].X)]
 		}
 
@@ -124,8 +146,9 @@ func Gaussian() {
 		}
 
 		l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), input), set.Get("ab")))
-		l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
-		cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
+		l2 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb")))
+		l3 := tf32.Add(tf32.Mul(set.Get("cw"), l2), set.Get("cb"))
+		cost := tf32.Avg(tf32.Quadratic(l3, others.Get("output")))
 
 		d := make([]float64, len(stats))
 		for i, stat := range stats {
@@ -146,7 +169,7 @@ func Gaussian() {
 				}
 			}
 
-			index := 0
+			/*index := 0
 			for _, data := range fisher {
 				if data.Label == "Iris-setosa" {
 					continue
@@ -159,7 +182,7 @@ func Gaussian() {
 					}
 					index++
 				}
-			}
+			}*/
 
 			total += tf32.Gradient(cost).X[0]
 			sum := float32(0.0)
@@ -201,21 +224,23 @@ func Gaussian() {
 		}
 		fmt.Println(tf32.Gradient(cost).X[0])
 
-		l1(func(a *tf32.V) bool {
+		l2(func(a *tf32.V) bool {
 			v := make(plotter.Values, 0, 8)
 			for _, value := range a.X {
 				v = append(v, float64(value))
 			}
 			data := make(map[string][]float64)
 			stats := make([]Statistics, width)
-			for i, entry := range fisher {
+			index := 100
+			for _, entry := range fisher {
 				if entry.Label == "Iris-setosa" {
 					continue
 				}
 				for j := 0; j < width; j++ {
-					fmt.Printf("%f ", a.X[i*width+j])
-					stats[j].Add(float64(a.X[i*width+j]))
+					fmt.Printf("%f ", a.X[index*width+j])
+					stats[j].Add(float64(a.X[index*width+j]))
 				}
+				index++
 				fmt.Printf("%s\n", entry.Label)
 			}
 			indexes := make([]int, 0, 8)
@@ -334,8 +359,9 @@ func Gaussian() {
 		return l1
 	}
 
-	l1 := train("layer1", 4, 16, others.Get("input"))
-	train("layer2", 16, 4, l1)
+	l1 := train("layer1", 4, 8, others.Get("input"))
+	_ = l1
+	//train("layer2", 16, 4, l1)
 }
 
 // Quantize is a quantization diffusion network
