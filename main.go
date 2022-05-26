@@ -169,6 +169,11 @@ func main() {
 }
 
 func Start() {
+	err := os.MkdirAll("results", 0700)
+	if err != nil {
+		panic(err)
+	}
+
 	rnd := rand.New(rand.NewSource(1))
 	datum, err := iris.Load()
 	if err != nil {
@@ -187,10 +192,13 @@ func Start() {
 	}
 	defer out.Close()
 	reduction.PrintTable(out, ModeRaw, 0)
+	fmt.Println("\ncorrectness:")
+	fmt.Println(reduction.GetEntropy(0))
+	fmt.Println(reduction.GetConsistency())
 }
 
 func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, label, count uint, data []iris.Iris) *Reduction {
-	name := fmt.Sprintf("%s%dnode", lr, depth)
+	name := fmt.Sprintf("node%d", label)
 	embeddings := Segment(rnd, stats, name, 4, 16, data)
 	reduction := embeddings.VarianceReduction(1, label, count)
 	if depth <= 0 {
@@ -214,9 +222,11 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 	others.Add("input", 4, len(iris))
 	others.Add("output", 4, len(iris))
 
+	stats = [4]Statistics{}
 	for _, w := range others.Weights {
 		for _, data := range iris {
-			for _, measure := range data.Measures {
+			for i, measure := range data.Measures {
+				stats[i].Add(measure)
 				w.X = append(w.X, float32(measure))
 			}
 		}
@@ -333,7 +343,7 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 		return l1, cost
 	}
 
-	l1, cost := train(fmt.Sprintf("layer1_%s", name), 4, 16, others.Get("input"))
+	l1, cost := train(fmt.Sprintf("%s_layer1", name), 4, 16, others.Get("input"))
 	//l1, cost = train(fmt.Sprintf("layer2_%s", name), 16, 4, l1)
 
 	index := 0
@@ -348,7 +358,7 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 	embeddings := Embeddings{
 		Columns:    width,
 		Network:    l1,
-		CostCurve:  fmt.Sprintf("results/%s_gaussian_cost.png", name),
+		CostCurve:  fmt.Sprintf("results/%s_layer1_gaussian_cost.png", name),
 		Embeddings: make([]Embedding, 0, 8),
 	}
 	l1(func(a *tf32.V) bool {
@@ -458,10 +468,6 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 		}*/
 		return true
 	})
-
-	for _, stat := range stats {
-		fmt.Println(stat.StandardDeviation())
-	}
 
 	return &embeddings
 }
