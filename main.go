@@ -185,7 +185,7 @@ func Start() {
 			stats[i].Add(measure)
 		}
 	}
-	reduction := Process("", rnd, stats, 3, 0, 0, datum.Fisher)
+	reduction := Process("", rnd, stats, 2, 0, 0, datum.Fisher)
 	out, err := os.Create("results/result.md")
 	if err != nil {
 		panic(err)
@@ -199,7 +199,7 @@ func Start() {
 
 func Process(lr string, rnd *rand.Rand, stats [4]Statistics, depth int, label, count uint, data []iris.Iris) *Reduction {
 	name := fmt.Sprintf("node%d", label)
-	embeddings := Segment(rnd, stats, name, 4, 16, data)
+	embeddings := Segment(rnd, stats, name, 4, 4, data)
 	reduction := embeddings.VarianceReduction(1, label, count)
 	if depth <= 0 {
 		return reduction
@@ -258,7 +258,7 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 			deltas = append(deltas, make([]float32, len(p.X)))
 		}
 
-		l1 := tf32.TanH(tf32.Add(tf32.Mul(set.Get("aw"), input), set.Get("ab")))
+		l1 := tf32.Softmax(tf32.Add(tf32.Mul(set.Get("aw"), input), set.Get("ab")))
 		l2 := tf32.Add(tf32.Mul(set.Get("bw"), l1), set.Get("bb"))
 		cost := tf32.Avg(tf32.Quadratic(l2, others.Get("output")))
 
@@ -343,7 +343,7 @@ func Segment(rnd *rand.Rand, stats [4]Statistics, name string, size, width int, 
 		return l1, cost
 	}
 
-	l1, cost := train(fmt.Sprintf("%s_layer1", name), 4, 16, others.Get("input"))
+	l1, cost := train(fmt.Sprintf("%s_layer1", name), 4, 4, others.Get("input"))
 	//l1, cost = train(fmt.Sprintf("layer2_%s", name), 16, 4, l1)
 
 	index := 0
